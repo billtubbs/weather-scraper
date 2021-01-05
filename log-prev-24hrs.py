@@ -53,7 +53,7 @@ logger.info(f"Station_code: {station_code}")
 
 url = f'https://weather.gc.ca/past_conditions/index_e.html?station={station_code:s}'
 
-data_dir = 'data'
+data_dir = '/Users/billtubbs/weather-scraper/data'
 filename = f'past-24-hr-{station_code}-data.csv'
 
 logger.info(f"Data directory: {data_dir}")
@@ -164,13 +164,15 @@ df = pd.DataFrame(data, columns=col_labels).set_index(datetime_label).sort_index
 
 def read_data_from_file(data_dir, year, filename):
     filepath = os.path.join(data_dir, f"{year:d}", filename)
-    df = pd.read_csv(filepath)
+    df = pd.read_csv(filepath, index_col=0, dtype=str, keep_default_na=False)
     return df
 
 def save_data_to_file(df, data_dir, year, filename):
     filepath = os.path.join(data_dir, f"{year:d}", filename)
-    df = pd.read_csv(filepath)
-    return df
+    df.to_csv(filepath)
+
+#TODO: Above functions are not currently used.
+
 
 year = date.year
 filepath = os.path.join(data_dir, f"{year:d}", filename)
@@ -185,7 +187,8 @@ if not os.path.exists(filepath):
     logger.info(f"Data saved to {filepath}")
 else:
     logger.info("Existing file found")
-    df_existing = pd.read_csv(filepath, index_col=0, dtype=str)
+    df_existing = pd.read_csv(filepath, index_col=0, dtype=str, 
+                              keep_default_na=False)
     assert df_existing.index.name == datetime_label
     df_existing = df_existing.sort_index()
     # Add existing records to current dataframe
