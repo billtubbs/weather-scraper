@@ -29,10 +29,14 @@ def get_console_handler():
    console_handler = logging.StreamHandler(sys.stdout)
    console_handler.setFormatter(FORMATTER)
    return console_handler
+
+
 def get_file_handler():
    file_handler = TimedRotatingFileHandler(LOG_FILE, when='midnight')
    file_handler.setFormatter(FORMATTER)
    return file_handler
+
+
 def get_logger(logger_name):
    logger = logging.getLogger(logger_name)
    logger.setLevel(logging.DEBUG) # better to have too much log than not enough
@@ -42,23 +46,23 @@ def get_logger(logger_name):
    logger.propagate = False
    return logger
 
+
 # Start logger
 logger = get_logger("my module name")
 logger.info(f"log-prev-24hrs.py started")
 logger.info(f"Python version {python_version()}")
 
-
 station_code = 'vou'
 logger.info(f"Station_code: {station_code}")
 
 url = f'https://weather.gc.ca/past_conditions/index_e.html?station={station_code:s}'
+logger.info(f"URL: {url}")
 
 data_dir = '/Users/billtubbs/weather-scraper/data'
 filename = f'past-24-hr-{station_code}-data.csv'
 
 logger.info(f"Data directory: {data_dir}")
 logger.info(f"Data filename: {filename}")
-
 
 # LXML Tutorial is here: https://docs.python-guide.org/scenarios/scrape/
 page = requests.get(url)
@@ -69,6 +73,7 @@ tree = html.fromstring(page.content)
 # This data is used by function remove_nonprintable
 nonprintable = itertools.chain(range(0x00,0x20), range(0x7f,0xa0))
 nonprintable = {c:None for c in nonprintable}
+
 
 def remove_nonprintable(text, nonprintable=nonprintable):
     """Remove all non-printable characters from string."""
@@ -86,9 +91,10 @@ def read_element_text(element, empty='Missing'):
 
 # Find the data table within the webpage
 results = tree.xpath('//table[@id="past24Table"]')
-assert len(results) == 1
+assert len(results) > 0, "no data table found"
+if len(results) > 1:
+    logging.error("More than one data table found")
 past_24_table = results[0]
-past_24_table
 
 logger.info("Reading data from past 24-hour table...")
 datetime_label = 'Date / Time PST'
@@ -122,7 +128,11 @@ for i, item in enumerate(table_headers):
         time_col = count
     count += 1
 n_columns = count
-assert time_col is not None, "time column not recognized"
+
+if time_col is None:
+     logging.error(f"Time column not recognized")
+     logging.info(f"Using first column for date/time")
+     time_col = 0
 
 # Read data from table body
 table_body = past_24_table.xpath('tbody')[0]
@@ -145,12 +155,24 @@ for i, row in enumerate(rows):
         row_data = []
         for item in items:
             # Header id ends in 'm' for metric or 'i' for imperial
-            if item.attrib['headers'].endswith('i') or 'imperial' in item.attrib['class']:
+            if (item.attrib['headers'].endswith('i') or 'imperial' in 
+                    item.attrib['class']):
                 continue
             text = read_element_text(item)
             row_data.append(text)
             count += 1
-        assert count == n_columns, 'Failed to read table row data'
+
+        if count != n_columns:
+            logging.error(f"Failed to read table row {i}")
+            logging.info(f"count = {count}")
+            while len(row_data) < count:
+                # Fill missing data columns with nan
+                row_data.append('n/a')
+            while len(row_data) > count:
+                # Concatenate excess data into last column
+                row_data[-2] = row_data[-2] + row_data[-1]
+                row_data = row_data[:-1]
+
         logger.info(f"{i:3d}: {row_data}")
         
         # Add date time time column
@@ -191,7 +213,7 @@ else:
                               keep_default_na=False)
     assert df_existing.index.name == datetime_label
     df_existing = df_existing.sort_index()
-    # Add existing records to current dataframe
+    # Add earlier records from existing file to current dataframe
     df = pd.concat(
         [df_existing.loc[df_existing.index < df.index[0]], df],
         axis=0
